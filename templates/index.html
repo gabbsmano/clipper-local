@@ -1,0 +1,528 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clipper Local</title>
+<style>
+  :root { --bg:#0f1115; --card:#181b22; --line:#2a2f3a; --text:#e6e8ee; --muted:#8b93a7; --accent:#7c5cff; --danger:#e5484d; --ok:#30a46c; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, Segoe UI, Roboto, sans-serif; background:var(--bg); color:var(--text); }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 60px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 20px; font-size: 14px; }
+  .grid { display:grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
+  @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
+  .card { background: var(--card); border:1px solid var(--line); border-radius: 12px; padding: 16px; }
+  .card h2 { font-size: 15px; margin: 0 0 12px; }
+  .row { display:flex; gap:8px; flex-wrap: wrap; align-items:center; margin-bottom: 8px; }
+  input, select { background:#0f1115; color:var(--text); border:1px solid var(--line); border-radius:8px; padding:8px 10px; font:inherit; }
+  input.path { flex:1; min-width: 200px; }
+  input.t { width: 90px; }
+  input.name { width: 120px; }
+  input.title { flex: 1; min-width: 160px; }
+  input.num { width: 70px; }
+  button { background: var(--accent); color:white; border:0; border-radius:8px; padding:8px 14px; font:inherit; cursor:pointer; }
+  button.ghost { background: transparent; border:1px solid var(--line); color: var(--text); }
+  button.danger { background: transparent; border:1px solid var(--danger); color: var(--danger); padding: 6px 10px; }
+  button:disabled { opacity: .5; cursor: default; }
+  video { width: 100%; border-radius: 10px; background:#000; max-height: 420px; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .status { margin-top: 10px; font-size: 14px; min-height: 20px; }
+  .status.err { color: var(--danger); }
+  .clip { display:flex; gap:8px; align-items:center; flex-wrap:wrap; padding:8px; border:1px solid var(--line); border-radius:8px; margin-bottom:8px; }
+  .clip.bad { border-color: var(--danger); }
+  .dur { color: var(--muted); font-size: 13px; min-width: 48px; }
+  .bar { height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; margin: 10px 0; }
+  .bar > div { height: 100%; background: var(--ok); width: 0; transition: width .3s; }
+  .hl { padding:8px; border:1px solid var(--line); border-radius:8px; margin-bottom:8px; }
+  .hl p { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
+  a { color: #a994ff; }
+  .list a { display:block; margin: 4px 0; word-break: break-all; }
+  label { font-size: 14px; display:flex; gap:6px; align-items:center; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Clipper Local</h1>
+  <p class="sub">Corte vídeos longos em cortes verticais (9:16) para TikTok, Reels e Shorts. Tudo roda no seu PC.</p>
+
+  <section class="card">
+    <h2>1. Vídeo de origem</h2>
+    <div class="row">
+      <input class="path" id="path" type="text" placeholder="Cole o caminho completo do vídeo, ex: C:\Videos\gta6.mp4">
+      <button id="load">Carregar</button>
+    </div>
+    <div class="muted" id="info">Nenhum vídeo carregado.</div>
+    <div style="margin-top:12px"><video id="player" controls preload="metadata"></video></div>
+    <div class="row" style="margin-top:8px">
+      <button class="ghost" id="markStart">Marcar início (tempo atual)</button>
+      <button class="ghost" id="markEnd">Marcar fim (tempo atual)</button>
+    </div>
+  </section>
+
+  <div class="grid">
+    <section class="card">
+      <h2>2. Cortes automáticos</h2>
+      <div class="row">
+        <label>Duração alvo (s) <input id="target" type="text" value="45" class="num"></label>
+      </div>
+      <div class="row">
+        <button class="ghost" id="detect">Detectar pausas (podcast)</button>
+        <span class="muted" id="pauseInfo"></span>
+      </div>
+      <div class="row">
+        <label><input type="checkbox" id="usePauses" checked> Cortar nas pausas quando possível</label>
+      </div>
+      <div class="row">
+        <button id="generate">Gerar cortes</button>
+      </div>
+      <p class="muted">Gera cortes de ~N segundos. Se houver pausas detectadas, o corte cai na pausa mais próxima do alvo.</p>
+    </section>
+
+    <section class="card">
+      <h2>3. Exportação</h2>
+      <div class="row">
+        <select id="format">
+          <option value="vertical">Vertical 9:16 (recorte central)</option>
+          <option value="vertical_blur">Vertical 9:16 (fundo desfocado)</option>
+          <option value="original">Original (sem alterar proporção)</option>
+        </select>
+      </div>
+      <div class="row">
+        <label><input type="checkbox" id="jumpCuts"> Remover pausas (jump cut)</label>
+        <label>pausas maiores que (s) <input id="minGap" class="num" type="text" value="0.6"></label>
+      </div>
+      <div class="row">
+        <label><input type="checkbox" id="reframe"> Seguir quem fala (2 pessoas, só formato vertical)</label>
+      </div>
+      <div class="row">
+        <label><input type="checkbox" id="subs"> Legendas automáticas (precisa transcrever)</label>
+        <select id="subStyle">
+          <option value="chunk">Blocos de texto</option>
+          <option value="word">Destaque palavra por palavra (amarelo)</option>
+        </select>
+      </div>
+      <div class="row">
+        <label>Título: mostrar por (s) <input id="titleSecs" class="num" type="text" value="4"></label>
+        <span class="muted">0 = o corte inteiro</span>
+      </div>
+      <div class="row">
+        <button id="export">Exportar todos os cortes</button>
+      </div>
+      <div class="bar"><div id="progress"></div></div>
+      <div class="muted" id="exportInfo"></div>
+      <div class="list" id="results"></div>
+    </section>
+  </div>
+
+  <section class="card" style="margin-top:16px">
+    <h2>4. Transcrição e melhores momentos (100% local)</h2>
+    <div class="row">
+      <label>Modelo
+        <select id="size">
+          <option value="tiny">tiny (mais rápido, menos preciso)</option>
+          <option value="base">base</option>
+          <option value="small" selected>small (recomendado)</option>
+          <option value="medium">medium (mais lento, mais preciso)</option>
+        </select>
+      </label>
+      <label>Idioma
+        <select id="lang">
+          <option value="">Automático</option>
+          <option value="pt">Português</option>
+          <option value="en">Inglês</option>
+          <option value="es">Espanhol</option>
+        </select>
+      </label>
+    </div>
+    <div class="row">
+      <button id="transcribe">Transcrever (para legendas)</button>
+    </div>
+    <div class="row">
+      <label>Quantos <input class="num" id="hlCount" value="5"></label>
+      <label>Duração (s) <input class="num" id="hlLength" value="45"></label>
+      <label>Método
+        <select id="method">
+          <option value="heuristic">Heurística (grátis, local)</option>
+          <option value="ai">IA Claude (usa sua API)</option>
+        </select>
+      </label>
+      <button class="ghost" id="highlights">Achar melhores momentos</button>
+    </div>
+    <div class="muted" id="aiStatus"></div>
+    <p class="muted">Transcrever usa o Whisper e demora (vídeos de 1h podem levar bastante tempo em CPU). O resultado fica salvo, então não precisa repetir. Os melhores momentos combinam volume, ritmo de fala e risadas/exclamações.</p>
+    <div class="muted" id="aMsg"></div>
+    <div id="hlList"></div>
+    <div class="row" id="hlAll" style="display:none"><button class="ghost" id="addAll">Adicionar todos à lista</button></div>
+  </section>
+
+  <section class="card" style="margin-top:16px">
+    <h2>5. Fila em lote</h2>
+    <p class="muted">Um caminho de vídeo por linha. Para cada vídeo o app transcreve (se precisar), escolhe os momentos e exporta, usando as opções das seções 3 e 4.</p>
+    <textarea id="queuePaths" rows="4" style="width:100%;background:#0f1115;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:8px;font:inherit" placeholder="C:\Videos\ep1.mp4"></textarea>
+    <div class="row" style="margin-top:8px">
+      <button id="runQueue">Processar fila</button>
+      <span class="muted" id="queueMsg"></span>
+    </div>
+    <div id="queueList"></div>
+  </section>
+
+  <section class="card" style="margin-top:16px">
+    <h2>6. Publicar no TikTok</h2>
+    <div class="muted" id="tkStatus"></div>
+    <div class="row" style="margin-top:8px">
+      <label>Privacidade
+        <select id="tkPrivacy">
+          <option value="SELF_ONLY">Só eu (recomendado até o app ser aprovado)</option>
+          <option value="MUTUAL_FOLLOW_FRIENDS">Amigos mútuos</option>
+          <option value="FOLLOWER_OF_CREATOR">Seguidores</option>
+          <option value="PUBLIC_TO_EVERYONE">Público</option>
+        </select>
+      </label>
+    </div>
+    <p class="muted">Os botões "Publicar no TikTok" aparecem nos cortes exportados e na fila. Cada publicação mostra a legenda e pede confirmação antes de enviar. A legenda vem do arquivo .txt ao lado do vídeo.</p>
+  </section>
+
+  <section class="card" style="margin-top:16px">
+    <h2>Lista de cortes</h2>
+    <div class="row">
+      <input class="t" id="newStart" placeholder="início 0:00">
+      <input class="t" id="newEnd" placeholder="fim 0:45">
+      <input class="title" id="newTitle" placeholder="título (opcional)">
+      <button class="ghost" id="addClip">Adicionar corte manual</button>
+      <button class="ghost" id="clear">Limpar lista</button>
+    </div>
+    <div id="clips"><div class="muted">Nenhum corte ainda.</div></div>
+    <div class="status" id="status"></div>
+  </section>
+</main>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const player = $("#player");
+let info = null;      // dados do vídeo carregado
+let clips = [];       // [{name, start, end, title}]
+let pauses = [];      // pontos de corte detectados
+let highlights = [];  // melhores momentos encontrados
+let stopAt = null;    // usado pelo botão ▶ de cada corte
+
+function fmt(t) {
+  if (isNaN(t)) return "";
+  t = Math.max(0, t);
+  const m = Math.floor(t / 60), s = (t % 60).toFixed(1).padStart(4, "0");
+  return `${m}:${s}`;
+}
+function parseTime(str) {
+  str = String(str).trim().replace(",", ".");
+  if (!str) return NaN;
+  return str.split(":").reduce((acc, p) => acc * 60 + parseFloat(p), 0);
+}
+function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function setStatus(msg, err = false) { const el = $("#status"); el.textContent = msg; el.className = "status" + (err ? " err" : ""); }
+
+async function post(url, body) {
+  const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || "Erro desconhecido");
+  return j;
+}
+
+// ---------- 1. Carregar vídeo ----------
+$("#load").onclick = async () => {
+  setStatus("Lendo vídeo...");
+  try {
+    info = await post("/api/load", { path: $("#path").value });
+    player.src = "/media?t=" + Date.now();
+    $("#info").textContent = `${info.name} — ${fmt(info.duration)} — ${info.width || "?"}x${info.height || "?"}`;
+    pauses = []; $("#pauseInfo").textContent = "";
+    highlights = []; renderHighlights([]);
+    $("#aMsg").textContent = "";
+    setStatus("Vídeo carregado.");
+  } catch (e) { setStatus(e.message, true); }
+};
+
+$("#markStart").onclick = () => { $("#newStart").value = fmt(player.currentTime); };
+$("#markEnd").onclick = () => { $("#newEnd").value = fmt(player.currentTime); };
+
+player.addEventListener("timeupdate", () => {
+  if (stopAt !== null && player.currentTime >= stopAt) { player.pause(); stopAt = null; }
+});
+
+// ---------- 2. Pausas e cortes automáticos ----------
+$("#detect").onclick = async () => {
+  if (!info) return setStatus("Carregue um vídeo primeiro.", true);
+  const btn = $("#detect"); btn.disabled = true;
+  setStatus("Detectando pausas... em vídeos longos pode levar alguns minutos.");
+  try {
+    pauses = (await post("/api/pauses")).points;
+    $("#pauseInfo").textContent = `${pauses.length} pausas encontradas`;
+    setStatus("Pausas detectadas.");
+  } catch (e) { setStatus(e.message, true); }
+  btn.disabled = false;
+};
+
+// Divide o vídeo em blocos de ~target segundos, preferindo cortar numa pausa
+// que esteja entre 70% e 125% do alvo. Se o resto for muito curto, junta no último corte.
+function autoSegments(duration, target, cuts, minLen = 8) {
+  const segs = [];
+  const sorted = [...cuts].sort((a, b) => a - b);
+  let start = 0;
+  while (duration - start > 0.5) {
+    let end = start + target;
+    if (end >= duration - minLen) {
+      end = duration;
+    } else {
+      const lo = start + target * 0.7, hi = start + target * 1.25;
+      const cands = sorted.filter((c) => c >= lo && c <= hi && c < duration);
+      if (cands.length) {
+        end = cands.reduce((a, b) => (Math.abs(b - (start + target)) < Math.abs(a - (start + target)) ? b : a));
+      }
+    }
+    segs.push({ start, end });
+    start = end;
+  }
+  return segs;
+}
+
+$("#generate").onclick = () => {
+  if (!info) return setStatus("Carregue um vídeo primeiro.", true);
+  const target = parseFloat($("#target").value);
+  if (!(target >= 5)) return setStatus("Duração alvo deve ser de pelo menos 5 segundos.", true);
+  const cuts = $("#usePauses").checked ? pauses : [];
+  clips = autoSegments(info.duration, target, cuts).map((s, i) => ({ name: `corte_${i + 1}`, start: s.start, end: s.end, title: "" }));
+  renderClips();
+  setStatus(`${clips.length} cortes gerados.`);
+};
+
+// ---------- 3. Transcrição e melhores momentos ----------
+function startAnalyze(opts) {
+  if (!info) return setStatus("Carregue um vídeo primeiro.", true);
+  $("#transcribe").disabled = true; $("#highlights").disabled = true;
+  post("/api/analyze", {
+    ...opts,
+    size: $("#size").value,
+    language: $("#lang").value,
+    count: parseInt($("#hlCount").value, 10),
+    length: parseFloat($("#hlLength").value),
+  }).then((j) => pollAnalyze(j.job_id))
+    .catch((e) => { setStatus(e.message, true); $("#transcribe").disabled = false; $("#highlights").disabled = false; });
+}
+
+async function pollAnalyze(id) {
+  const j = await (await fetch(`/api/jobs/${id}`)).json();
+  $("#aMsg").textContent = j.message || "";
+  if (j.state === "running") return setTimeout(() => pollAnalyze(id), 1000);
+  $("#transcribe").disabled = false; $("#highlights").disabled = false;
+  if (j.state === "error") return setStatus(j.error, true);
+  if (j.result.has_transcript) setStatus("Transcrição pronta. Você pode ativar as legendas na exportação.");
+  if (j.result.highlights) { highlights = j.result.highlights; renderHighlights(highlights); }
+}
+
+$("#transcribe").onclick = () => startAnalyze({ transcribe: true, highlights: false });
+$("#highlights").onclick = () => startAnalyze({ transcribe: false, highlights: true, method: $("#method").value });
+
+async function loadAiStatus() {
+  try {
+    const s = await (await fetch("/api/ai-status")).json();
+    $("#aiStatus").textContent = s.configured
+      ? `IA disponível (modelo ${s.model}). O uso é cobrado pela sua conta da API.`
+      : "IA indisponível: defina a variável ANTHROPIC_API_KEY e reinicie o app (veja o README).";
+  } catch (e) { /* servidor fora do ar: ignora */ }
+}
+loadAiStatus();
+
+function fromHighlight(h, n) {
+  return { name: `destaque_${n}`, start: h.start, end: h.end, title: h.title || "",
+           description: h.description || "", hashtags: h.hashtags || [] };
+}
+
+function renderHighlights(list) {
+  const box = $("#hlList");
+  $("#hlAll").style.display = list.length ? "flex" : "none";
+  box.innerHTML = list.map((h, i) => `
+    <div class="hl">
+      <div class="row">
+        <strong>${fmt(h.start)} → ${fmt(h.end)}</strong>
+        <span class="dur">pontuação ${h.score}</span>
+        <button class="ghost" data-hl="${i}">+ Adicionar</button>
+      </div>
+      ${h.title ? `<div><strong>${esc(h.title)}</strong></div>` : ""}
+      ${h.preview ? `<p>${esc(h.preview)}</p>` : ""}
+      ${h.description ? `<p>📝 ${esc(h.description)}</p>` : ""}
+      ${h.hashtags && h.hashtags.length ? `<p>${esc(h.hashtags.join(" "))}</p>` : ""}
+    </div>`).join("");
+  box.querySelectorAll("[data-hl]").forEach((btn) => btn.onclick = () => {
+    const h = highlights[+btn.dataset.hl];
+    clips.push(fromHighlight(h, clips.length + 1));
+    renderClips();
+  });
+}
+$("#addAll").onclick = () => {
+  highlights.forEach((h) => clips.push(fromHighlight(h, clips.length + 1)));
+  renderClips();
+};
+
+// ---------- 4. Lista de cortes ----------
+$("#addClip").onclick = () => {
+  const start = parseTime($("#newStart").value), end = parseTime($("#newEnd").value);
+  if (isNaN(start) || isNaN(end) || end <= start) return setStatus("Preencha início e fim válidos (ex: 1:20 e 1:45).", true);
+  clips.push({ name: `corte_${clips.length + 1}`, start, end, title: $("#newTitle").value.trim() });
+  $("#newStart").value = ""; $("#newEnd").value = ""; $("#newTitle").value = "";
+  renderClips();
+};
+$("#clear").onclick = () => { clips = []; renderClips(); };
+
+function renderClips() {
+  const box = $("#clips");
+  if (!clips.length) { box.innerHTML = '<div class="muted">Nenhum corte ainda.</div>'; return; }
+  box.innerHTML = "";
+  clips.forEach((c, i) => {
+    const bad = isNaN(c.start) || isNaN(c.end) || c.end <= c.start;
+    const row = document.createElement("div");
+    row.className = "clip" + (bad ? " bad" : "");
+    row.innerHTML = `
+      <input class="name" data-k="name" value="${esc(c.name)}">
+      <input class="t" data-k="start" value="${fmt(c.start)}">
+      <input class="t" data-k="end" value="${fmt(c.end)}">
+      <input class="title" data-k="title" value="${esc(c.title || "")}" placeholder="título na tela">
+      <span class="dur">${bad ? "inválido" : (c.end - c.start).toFixed(1) + "s"}</span>
+      <button class="ghost" data-act="play">▶ Ver</button>
+      <button class="danger" data-act="del">✕</button>`;
+    row.querySelectorAll("input").forEach((inp) => inp.onchange = () => {
+      const k = inp.dataset.k;
+      clips[i][k] = (k === "name" || k === "title") ? inp.value : parseTime(inp.value);
+      renderClips();
+    });
+    row.querySelector('[data-act="play"]').onclick = () => {
+      if (!info) return;
+      player.currentTime = c.start; stopAt = c.end; player.play();
+    };
+    row.querySelector('[data-act="del"]').onclick = () => { clips.splice(i, 1); renderClips(); };
+    box.appendChild(row);
+  });
+}
+
+// ---------- 5. Exportar ----------
+$("#export").onclick = async () => {
+  const valid = clips.filter((c) => !isNaN(c.start) && !isNaN(c.end) && c.end > c.start);
+  if (!info) return setStatus("Carregue um vídeo primeiro.", true);
+  if (!valid.length) return setStatus("Não há cortes válidos para exportar.", true);
+  $("#results").innerHTML = ""; $("#progress").style.width = "0%";
+  $("#export").disabled = true;
+  try {
+    const { job_id } = await post("/api/export", {
+      format: $("#format").value,
+      subtitles: $("#subs").checked,
+      title_seconds: parseFloat($("#titleSecs").value) || 0,
+      jump_cuts: $("#jumpCuts").checked,
+      min_gap: parseFloat($("#minGap").value) || 0.6,
+      reframe: $("#reframe").checked,
+      sub_style: $("#subStyle").value,
+      clips: valid,
+    });
+    pollExport(job_id, valid.length);
+  } catch (e) { setStatus(e.message, true); $("#export").disabled = false; }
+};
+
+async function pollExport(id, total) {
+  const j = await (await fetch(`/api/jobs/${id}`)).json();
+  $("#progress").style.width = (100 * j.done / total) + "%";
+  $("#exportInfo").textContent = `${j.message} (${j.done}/${total})`;
+  if (j.state !== "done") return setTimeout(() => pollExport(id, total), 1000);
+
+  $("#exportInfo").textContent = `Concluído: ${j.files.length} de ${total} cortes. Pasta: output/`;
+  $("#results").innerHTML = j.files.map((f) => `<div class="row"><a href="/output/${encodeURI(f)}" target="_blank">${esc(f)}</a>${tiktokBtn(f)}</div>`).join("");
+  if (j.errors.length) $("#results").innerHTML += j.errors.map((e) => `<div class="status err">${esc(e)}</div>`).join("");
+  $("#export").disabled = false;
+}
+
+// ---------- 5. Fila em lote ----------
+function exportOptions() {
+  return {
+    format: $("#format").value,
+    subtitles: $("#subs").checked,
+    sub_style: $("#subStyle").value,
+    title_seconds: parseFloat($("#titleSecs").value) || 0,
+    jump_cuts: $("#jumpCuts").checked,
+    min_gap: parseFloat($("#minGap").value) || 0.6,
+    reframe: $("#reframe").checked,
+  };
+}
+
+$("#runQueue").onclick = async () => {
+  const paths = $("#queuePaths").value.split("\n").map((x) => x.trim()).filter(Boolean);
+  if (!paths.length) return setStatus("Cole pelo menos um caminho de vídeo.", true);
+  $("#runQueue").disabled = true;
+  try {
+    const { job_id } = await post("/api/queue", {
+      ...exportOptions(),
+      paths,
+      method: $("#method").value,
+      count: parseInt($("#hlCount").value, 10),
+      length: parseFloat($("#hlLength").value),
+      language: $("#lang").value,
+      size: $("#size").value,
+    });
+    pollQueue(job_id);
+  } catch (e) { setStatus(e.message, true); $("#runQueue").disabled = false; }
+};
+
+async function pollQueue(id) {
+  const j = await (await fetch(`/api/jobs/${id}`)).json();
+  $("#queueMsg").textContent = j.message || "";
+  $("#queueList").innerHTML = j.items.map((it) => `
+    <div class="hl">
+      <div class="row"><strong>${esc(it.name)}</strong><span class="dur">${esc(it.state)}</span></div>
+      ${it.message ? `<p>${esc(it.message)}</p>` : ""}
+      ${it.errors.map((e) => `<div class="status err">${esc(e)}</div>`).join("")}
+      ${it.files.map((f) => `<div class="row"><a href="/output/${encodeURI(f)}" target="_blank">${esc(f)}</a>${tiktokBtn(f)}</div>`).join("")}
+    </div>`).join("");
+  if (j.state !== "done") return setTimeout(() => pollQueue(id), 1500);
+  $("#runQueue").disabled = false;
+}
+
+// ---------- 6. Publicar no TikTok ----------
+let tkConfigured = false;
+async function loadTiktokStatus() {
+  try {
+    const s = await (await fetch("/api/tiktok/status")).json();
+    tkConfigured = s.configured;
+    $("#tkStatus").textContent = s.configured
+      ? "TikTok conectado (TIKTOK_ACCESS_TOKEN definida)."
+      : "TikTok não conectado: defina TIKTOK_ACCESS_TOKEN e reinicie o app (veja o README).";
+  } catch (e) { /* ignora */ }
+}
+loadTiktokStatus();
+
+function tiktokBtn(rel) {
+  return tkConfigured
+    ? `<button class="ghost" data-pub="${esc(rel)}">Publicar no TikTok</button>`
+    : `<span class="muted">(TikTok não conectado)</span>`;
+}
+
+document.addEventListener("click", (ev) => {
+  const btn = ev.target.closest("[data-pub]");
+  if (btn) publishConfirm(btn.dataset.pub);
+});
+
+async function publishConfirm(rel) {
+  const { caption } = await (await fetch("/api/caption?path=" + encodeURIComponent(rel))).json();
+  const privacy = $("#tkPrivacy").value;
+  const ok = window.confirm(`Publicar "${rel}" no TikTok?\n\nPrivacidade: ${privacy}\n\nLegenda:\n${caption || "(sem legenda)"}`);
+  if (!ok) return;
+  try {
+    const { job_id } = await post("/api/tiktok/publish", { path: rel, privacy, confirm: true });
+    pollPublish(job_id);
+  } catch (e) { setStatus(e.message, true); }
+}
+
+async function pollPublish(id) {
+  const j = await (await fetch(`/api/jobs/${id}`)).json();
+  if (j.state === "running") { setStatus(j.message || "Publicando..."); return setTimeout(() => pollPublish(id), 2000); }
+  if (j.state === "error") return setStatus(j.error, true);
+  setStatus(j.message || "Publicado.");
+}
+</script>
+</body>
+</html>

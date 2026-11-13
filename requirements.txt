@@ -1,0 +1,6 @@
+flask
+imageio-ffmpeg
+faster-whisper
+numpy
+anthropic
+opencv-python-headless
